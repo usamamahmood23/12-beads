@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Bead 12 · 12 Guti</title>
+<style>
+  :root{
+    --paper:#e9ddc4; --paper-edge:#d8c7a3;
+    --indigo:#2f3a56; --indigo-lo:#465477; --terra:#a8472a; --terra-lo:#c25c3c;
+    --gold:#c8973f; --felt:#3a4a3f; --felt-2:#32413a; --hi:#e8b04b;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{font-family:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
+    background:radial-gradient(140% 120% at 50% 0%, var(--felt) 0%, var(--felt-2) 70%, #28332e 100%);
+    color:#efe7d4; min-height:100%; display:flex; flex-direction:column; align-items:center;
+    padding:18px 14px 40px; gap:14px; -webkit-tap-highlight-color:transparent;}
+  header{text-align:center}
+  h1{font-size:clamp(26px,6vw,40px); letter-spacing:.5px; font-weight:600; color:#f3ead4; text-shadow:0 2px 0 rgba(0,0,0,.25)}
+  h1 .alt{color:var(--gold); font-style:italic; font-weight:500}
+  .tagline{font-size:12px; color:#b9c4b8; letter-spacing:2px; text-transform:uppercase; margin-top:4px}
+
+  .setup{display:flex; gap:10px; flex-wrap:wrap; justify-content:center; width:min(560px,100%)}
+  .seg{display:flex; background:rgba(0,0,0,.18); border:1px solid rgba(255,255,255,.08); border-radius:10px; overflow:hidden}
+  .seg button{border:0; border-radius:0; background:transparent; padding:9px 14px; font-size:13px; color:#cdd6cb}
+  .seg button.on{background:var(--gold); color:#2a200e; font-weight:600}
+  .seg .lbl{padding:9px 12px; font-size:12px; color:#9fb0a0; letter-spacing:1px; text-transform:uppercase; align-self:center}
+
+  .scorebar{display:flex; gap:10px; width:min(560px,100%)}
+  .score{flex:1; background:rgba(0,0,0,.18); border:1px solid rgba(255,255,255,.08); border-radius:12px;
+    padding:10px 14px; display:flex; align-items:center; gap:10px; transition:border-color .25s, box-shadow .25s}
+  .score.active{border-color:var(--hi); box-shadow:0 0 0 1px var(--hi), 0 4px 18px rgba(232,176,75,.18)}
+  .chip{width:22px;height:22px;border-radius:50%;flex:none;box-shadow:inset 0 -2px 3px rgba(0,0,0,.35)}
+  .chip.a{background:radial-gradient(circle at 35% 30%, var(--indigo-lo), var(--indigo))}
+  .chip.b{background:radial-gradient(circle at 35% 30%, var(--terra-lo), var(--terra))}
+  .score .nm{font-size:14px; color:#e7dcc4} .score .ct{margin-left:auto; font-size:22px; font-weight:600; font-variant-numeric:tabular-nums}
+
+  .boardwrap{position:relative; width:min(560px,100%); aspect-ratio:1/1}
+  svg{width:100%; height:100%; display:block; touch-action:manipulation}
+  .paper{fill:var(--paper); stroke:var(--paper-edge); stroke-width:3}
+  .line{stroke:#6f5836; stroke-width:2.2; stroke-linecap:round; opacity:.65}
+  .spot{fill:#6f5836; opacity:.55}
+  .bead .body{stroke:rgba(0,0,0,.28); stroke-width:1.5; transition:cx .18s ease, cy .18s ease}
+  .bead.a .body{fill:url(#gA)} .bead.b .body{fill:url(#gB)}
+  .bead .gloss{fill:rgba(255,255,255,.30); transition:cx .18s ease, cy .18s ease}
+  .bead.sel .body{stroke:var(--hi); stroke-width:3.5}
+  .bead.movable{cursor:pointer} .bead.movable .body{stroke:var(--gold); stroke-width:2.6}
+  .bead:not(.movable){cursor:default}
+  .target{fill:var(--hi); opacity:0; cursor:pointer; transition:opacity .18s}
+  .target.show{opacity:.85} .target.cap{fill:#e0563a}
+  .doomed .body{stroke:#e0563a !important; stroke-width:3.5 !important}
+  .lastmove{stroke:var(--gold); stroke-width:2; opacity:.5; fill:none}
+
+  .controls{display:flex; gap:10px; flex-wrap:wrap; justify-content:center; width:min(560px,100%)}
+  button{font-family:inherit; font-size:14px; cursor:pointer; border-radius:10px; padding:10px 16px;
+    border:1px solid rgba(255,255,255,.14); background:rgba(255,255,255,.06); color:#efe7d4; transition:background .2s, transform .05s}
+  button:hover{background:rgba(255,255,255,.12)} button:active{transform:translateY(1px)}
+  button:disabled{opacity:.4; cursor:default}
+  button.primary{background:var(--gold); color:#2a200e; border-color:var(--gold); font-weight:600}
+  button.primary:hover{background:#d8a64d}
+
+  .status{min-height:24px; font-size:15px; color:#e7dcc4; text-align:center; display:flex; align-items:center; gap:8px; justify-content:center}
+  .status .win{color:var(--gold); font-weight:600; font-size:18px}
+  .dots{display:inline-flex; gap:3px}
+  .dots i{width:5px;height:5px;border-radius:50%;background:var(--gold);animation:bnc 1s infinite}
+  .dots i:nth-child(2){animation-delay:.15s} .dots i:nth-child(3){animation-delay:.3s}
+  @keyframes bnc{0%,80%,100%{opacity:.3}40%{opacity:1}}
+
+  details{width:min(560px,100%); background:rgba(0,0,0,.16); border:1px solid rgba(255,255,255,.08); border-radius:12px; padding:4px 14px}
+  summary{cursor:pointer; padding:10px 0; font-size:12px; color:#b9c4b8; letter-spacing:1px; text-transform:uppercase}
+  pre{font-family:ui-monospace,Menlo,Consolas,monospace; font-size:12px; line-height:1.55; color:#cfe0cd; white-space:pre-wrap; padding:6px 0 14px}
+  .ok{color:#9fd49f} .bad{color:#e8a09a}
+</style>
+</head>
+<body>
+<header>
+  <h1>Bead 12 <span class="alt">12 Guti</span></h1>
+  <div class="tagline">Baro Guti · Bara Tehni</div>
+</header>
+
+<div class="setup">
+  <div class="seg" id="modeSeg">
+    <span class="lbl">Mode</span>
+    <button data-mode="cpu" class="on">vs Computer</button>
+    <button data-mode="hot">2 players</button>
+  </div>
+  <div class="seg" id="diffSeg">
+    <span class="lbl">Level</span>
+    <button data-diff="easy">Easy</button>
+    <button data-diff="medium" class="on">Medium</button>
+    <button data-diff="hard">Hard</button>
+  </div>
+</div>
+
+<div class="scorebar">
+  <div class="score" id="scoreA"><span class="chip a"></span><span class="nm" id="nmA">You</span><span class="ct" id="ctA">12</span></div>
+  <div class="score" id="scoreB"><span class="chip b"></span><span class="nm" id="nmB">Computer</span><span class="ct" id="ctB">12</span></div>
+</div>
+
+<div class="boardwrap">
+  <svg id="board" viewBox="0 0 560 560" aria-label="12 Guti board">
+    <defs>
+      <radialGradient id="gA" cx="35%" cy="30%"><stop offset="0%" stop-color="#465477"/><stop offset="100%" stop-color="#2f3a56"/></radialGradient>
+      <radialGradient id="gB" cx="35%" cy="30%"><stop offset="0%" stop-color="#c25c3c"/><stop offset="100%" stop-color="#a8472a"/></radialGradient>
+    </defs>
+    <rect class="paper" x="8" y="8" width="544" height="544" rx="14"/>
+    <g id="gLines"></g><g id="gSpots"></g><g id="gLast"></g><g id="gTargets"></g><g id="gBeads"></g>
+  </svg>
+</div>
+
+<div class="status" id="status">Your move.</div>
+
+<div class="controls">
+  <button class="primary" id="btnNew">New game</button>
+  <button id="btnUndo">Undo</button>
+  <div class="seg">
+    <span class="lbl">Capture</span>
+    <button data-rule="free" class="on">Optional</button>
+    <button data-rule="forced">Forced</button>
+  </div>
+</div>
+
+<details>
+  <summary>Engine &amp; AI self-test</summary>
+  <pre id="testout">Running…</pre>
+</details>
+
+<script type="module">
+// ===================== ENGINE (verified, identical to engine.js) =====================
+const EMPTY=0, A=1, B=2, SIZE=5, POINTS=25;
+const rc=i=>[Math.floor(i/SIZE), i%SIZE], id=(r,c)=>r*SIZE+c;
+const inB=(r,c)=>r>=0&&r<SIZE&&c>=0&&c<SIZE;
+const hasDiag=(r,c)=>((r+c)%2)===0;
+const NEIGHBORS=(()=>{const o=[[-1,0],[1,0],[0,-1],[0,1]],d=[[-1,-1],[-1,1],[1,-1],[1,1]],adj=[];
+  for(let p=0;p<POINTS;p++){const[r,c]=rc(p);const dirs=hasDiag(r,c)?o.concat(d):o;const L=[];
+    for(const[dr,dc]of dirs){const nr=r+dr,nc=c+dc;if(inB(nr,nc))L.push({dr,dc,to:id(nr,nc)});}adj.push(L);}return adj;})();
+const opp=p=>p===A?B:A;
+function initialBoard(){const b=new Int8Array(POINTS).fill(EMPTY);
+  for(let r=0;r<=1;r++)for(let c=0;c<SIZE;c++)b[id(r,c)]=B;
+  for(let r=3;r<=4;r++)for(let c=0;c<SIZE;c++)b[id(r,c)]=A;
+  b[id(2,0)]=A;b[id(2,1)]=A;b[id(2,3)]=B;b[id(2,4)]=B;b[id(2,2)]=EMPTY;return b;}
+function countBeads(b){let a=0,x=0;for(let i=0;i<POINTS;i++){if(b[i]===A)a++;else if(b[i]===B)x++;}return{[A]:a,[B]:x};}
+function newGame(rule='free'){const b=initialBoard();return{board:b,turn:A,captureRule:rule,chainFrom:null,scores:countBeads(b),history:[],result:null,movesSinceCapture:0};}
+function capturesFrom(b,from,pl){const out=[];const[r,c]=rc(from);
+  for(const{dr,dc,to:over}of NEIGHBORS[from]){if(b[over]!==opp(pl))continue;const lr=r+dr*2,lc=c+dc*2;if(!inB(lr,lc))continue;
+    const land=id(lr,lc);const linked=NEIGHBORS[over].some(n=>n.to===land&&n.dr===dr&&n.dc===dc);
+    if(linked&&b[land]===EMPTY)out.push({from,over,to:land});}return out;}
+function simpleFrom(b,from){const out=[];for(const{to}of NEIGHBORS[from])if(b[to]===EMPTY)out.push({from,to});return out;}
+function legalMoves(s){if(s.result)return[];const{board:b,turn:t,chainFrom:cf,captureRule:cr}=s;
+  if(cf!=null)return capturesFrom(b,cf,t).map(m=>({...m,type:'capture'}));
+  const caps=[];for(let p=0;p<POINTS;p++){if(b[p]!==t)continue;for(const c of capturesFrom(b,p,t))caps.push({...c,type:'capture'});}
+  if(cr==='forced'&&caps.length)return caps;
+  const sm=[];for(let p=0;p<POINTS;p++){if(b[p]!==t)continue;for(const m of simpleFrom(b,p))sm.push({...m,type:'move'});}
+  return caps.concat(sm);}
+function applyMove(s,move){const legal=legalMoves(s);const m=legal.find(x=>x.from===move.from&&x.to===move.to);if(!m)throw new Error('illegal');
+  const b=s.board.slice();const pl=s.turn;b[m.to]=pl;b[m.from]=EMPTY;const captured=[];
+  if(m.type==='capture'){b[m.over]=EMPTY;captured.push(m.over);}
+  const history=s.history.concat([{player:pl,from:m.from,to:m.to,captured}]);
+  const scores=countBeads(b);const msc=captured.length?0:s.movesSinceCapture+1;
+  let chainFrom=null,turn=opp(pl);
+  if(m.type==='capture'){const more=capturesFrom(b,m.to,pl);if(more.length){chainFrom=m.to;turn=pl;}}
+  let n={...s,board:b,turn,chainFrom,scores,history,movesSinceCapture:msc,result:null};n.result=checkResult(n);return n;}
+function checkResult(s){const sc=s.scores;if(sc[A]===0)return{winner:B,reason:'no beads left'};if(sc[B]===0)return{winner:A,reason:'no beads left'};
+  if(s.chainFrom==null){const mv=legalMoves({...s,result:null});if(mv.length===0)return{winner:opp(s.turn),reason:'no legal moves'};}
+  if(s.movesSinceCapture>=50)return{winner:'draw',reason:'50-move rule'};return null;}
+function movesFromPoint(s,from){return legalMoves(s).filter(m=>m.from===from);}
+
+// ===================== AI (identical to ai.js) =====================
+const CONNECTIVITY=NEIGHBORS.map(n=>n.length), MAX_CONN=8;
+const CENTER_BONUS=NEIGHBORS.map((_,p)=>{const[r,c]=rc(p);const d=Math.abs(r-2)+Math.abs(c-2);return(4-d)/4;});
+function evaluate(s,player){if(s.result){if(s.result.winner===player)return 100000;if(s.result.winner===opp(player))return -100000;return 0;}
+  const b=s.board;let mat=0,cen=0,con=0;
+  for(let p=0;p<POINTS;p++){const occ=b[p];if(occ===0)continue;const sign=occ===player?1:-1;
+    mat+=sign*100;cen+=sign*CENTER_BONUS[p]*6;con+=sign*(CONNECTIVITY[p]/MAX_CONN)*4;}
+  const myMob=legalMoves({...s,turn:player,chainFrom:null,result:null}).length;
+  const opMob=legalMoves({...s,turn:opp(player),chainFrom:null,result:null}).length;
+  return mat+cen+con+(myMob-opMob)*1.5;}
+function orderMoves(s){return legalMoves(s).sort((m1,m2)=>{const c1=m1.type==='capture'?1:0,c2=m2.type==='capture'?1:0;
+  if(c1!==c2)return c2-c1;return CENTER_BONUS[m2.to]-CENTER_BONUS[m1.to];});}
+function search(s,depth,alpha,beta,me){if(s.result||depth===0)return{score:evaluate(s,me),move:null};
+  const maxing=s.turn===me;const moves=orderMoves(s);if(!moves.length)return{score:evaluate(s,me),move:null};
+  let best=null;
+  if(maxing){let v=-Infinity;for(const m of moves){const r=search(applyMove(s,m),depth-1,alpha,beta,me);
+    if(r.score>v){v=r.score;best=m;}alpha=Math.max(alpha,v);if(alpha>=beta)break;}return{score:v,move:best};}
+  else{let v=Infinity;for(const m of moves){const r=search(applyMove(s,m),depth-1,alpha,beta,me);
+    if(r.score<v){v=r.score;best=m;}beta=Math.min(beta,v);if(alpha>=beta)break;}return{score:v,move:best};}}
+const DIFFICULTY={easy:{depth:2,randomness:.45},medium:{depth:4,randomness:.12},hard:{depth:6,randomness:0}};
+function chooseMove(s,level='medium',rng=Math.random){const cfg=DIFFICULTY[level]||DIFFICULTY.medium;const me=s.turn;
+  const moves=orderMoves(s);if(!moves.length)return null;if(moves.length===1)return moves[0];
+  if(cfg.randomness>0&&rng()<cfg.randomness){const ranked=moves.map(m=>({m,sc:search(applyMove(s,m),1,-Infinity,Infinity,me).score})).sort((x,y)=>y.sc-x.sc);
+    const w=level==='easy'?Math.min(4,ranked.length):Math.min(2,ranked.length);return ranked[Math.floor(rng()*w)].m;}
+  return search(s,cfg.depth,-Infinity,Infinity,me).move||moves[0];}
+
+// ===================== UI =====================
+const PAD=70, STEP=(560-PAD*2)/(SIZE-1);
+const px=i=>{const[r,c]=rc(i);return[PAD+c*STEP,PAD+r*STEP];};
+const $=s=>document.querySelector(s);
+const gLines=$('#gLines'),gSpots=$('#gSpots'),gTargets=$('#gTargets'),gBeads=$('#gBeads'),gLast=$('#gLast');
+const SVGNS='http://www.w3.org/2000/svg';
+const el=(t,a)=>{const e=document.createElementNS(SVGNS,t);for(const k in a)e.setAttribute(k,a[k]);return e;};
+(function(){const seen=new Set();for(let p=0;p<POINTS;p++){const[x1,y1]=px(p);
+  for(const{to}of NEIGHBORS[p]){const k=p<to?`${p}-${to}`:`${to}-${p}`;if(seen.has(k))continue;seen.add(k);
+    const[x2,y2]=px(to);gLines.appendChild(el('line',{class:'line',x1,y1,x2,y2}));}}
+  for(let p=0;p<POINTS;p++){const[x,y]=px(p);gSpots.appendChild(el('circle',{class:'spot',cx:x,cy:y,r:5}));}})();
+
+let state, selected=null, busy=false;
+let mode='cpu', diff='medium', rule='free';
+const humanSide=A;
+
+function aiTurn(){return mode==='cpu'&&state.turn!==humanSide&&!state.result;}
+
+function render(){
+  gBeads.innerHTML='';gTargets.innerHTML='';gLast.innerHTML='';
+  const legal=state.result?[]:legalMoves(state);
+  const movable=new Set(legal.map(m=>m.from));
+  const lm=state.history[state.history.length-1];
+  if(lm){const[fx,fy]=px(lm.from),[tx,ty]=px(lm.to);
+    gLast.appendChild(el('circle',{class:'lastmove',cx:fx,cy:fy,r:23}));
+    gLast.appendChild(el('circle',{class:'lastmove',cx:tx,cy:ty,r:23}));}
+  const canPick=!busy&&!aiTurn();
+  for(let p=0;p<POINTS;p++){if(state.board[p]===EMPTY)continue;const[x,y]=px(p);
+    const who=state.board[p]===A?'a':'b';const isMine=state.board[p]===state.turn;
+    const g=el('g',{class:`bead ${who}`+(isMine&&movable.has(p)&&canPick?' movable':'')+(selected===p?' sel':'')});
+    g.appendChild(el('circle',{class:'body',cx:x,cy:y,r:20}));
+    g.appendChild(el('ellipse',{class:'gloss',cx:x-5,cy:y-6,rx:7,ry:4}));
+    g.dataset.p=p;
+    if(isMine&&movable.has(p)&&canPick)g.addEventListener('click',()=>selectBead(p));
+    gBeads.appendChild(g);}
+  if(selected!=null&&canPick){for(const m of movesFromPoint(state,selected)){const[x,y]=px(m.to);
+    const t=el('circle',{class:'target show'+(m.type==='capture'?' cap':''),cx:x,cy:y,r:m.type==='capture'?15:11});
+    t.addEventListener('click',()=>doMove(m));gTargets.appendChild(t);
+    if(m.type==='capture'){const bd=[...gBeads.children].find(b=>+b.dataset.p===m.over);if(bd)bd.classList.add('doomed');}}}
+  chrome();
+}
+
+function chrome(){
+  $('#ctA').textContent=state.scores[A];$('#ctB').textContent=state.scores[B];
+  $('#scoreA').classList.toggle('active',state.turn===A&&!state.result);
+  $('#scoreB').classList.toggle('active',state.turn===B&&!state.result);
+  const st=$('#status');
+  if(state.result){
+    if(state.result.winner==='draw')st.innerHTML=`<span class="win">Draw</span> — ${state.result.reason}.`;
+    else{const w=state.result.winner;const name=mode==='cpu'?(w===humanSide?'You win!':'Computer wins'):`Player ${w===A?1:2} wins!`;
+      st.innerHTML=`<span class="win">${name}</span> <span style="color:#b9c4b8;font-size:13px">(${state.result.reason})</span>`;}
+  } else if(aiTurn()){st.innerHTML=`Computer is thinking <span class="dots"><i></i><i></i><i></i></span>`;}
+  else{const chain=state.chainFrom!=null?' — continue the capture':'';
+    const who=mode==='cpu'?'Your move':`Player ${state.turn===A?1:2} to move`;st.textContent=`${who}${chain}.`;}
+  $('#btnUndo').disabled=busy||state.history.length===0;
+  $('#nmA').textContent=mode==='cpu'?'You':'Player 1';
+  $('#nmB').textContent=mode==='cpu'?'Computer':'Player 2';
+}
+
+function selectBead(p){selected=(selected===p?null:p);render();}
+function doMove(m){state=applyMove(state,m);selected=state.chainFrom!=null?state.chainFrom:null;render();if(aiTurn())scheduleAI();}
+function scheduleAI(){busy=true;chrome();
+  setTimeout(()=>{let guard=0;
+    do{const mv=chooseMove(state,diff);if(!mv)break;state=applyMove(state,mv);guard++;}
+    while(state.chainFrom!=null&&guard<12);
+    busy=false;selected=null;render();},280);}
+function start(){state=newGame(rule);selected=null;busy=false;render();if(aiTurn())scheduleAI();}
+
+$('#modeSeg').addEventListener('click',e=>{const b=e.target.closest('button[data-mode]');if(!b)return;
+  mode=b.dataset.mode;[...$('#modeSeg').querySelectorAll('button')].forEach(x=>x.classList.toggle('on',x===b));
+  $('#diffSeg').style.opacity=mode==='cpu'?'1':'.4';$('#diffSeg').style.pointerEvents=mode==='cpu'?'auto':'none';start();});
+$('#diffSeg').addEventListener('click',e=>{const b=e.target.closest('button[data-diff]');if(!b)return;
+  diff=b.dataset.diff;[...$('#diffSeg').querySelectorAll('button')].forEach(x=>x.classList.toggle('on',x===b));start();});
+document.querySelectorAll('[data-rule]').forEach(btn=>btn.addEventListener('click',()=>{
+  rule=btn.dataset.rule;document.querySelectorAll('[data-rule]').forEach(x=>x.classList.toggle('on',x===btn));start();}));
+$('#btnNew').addEventListener('click',start);
+function rebuild(hist){let s=newGame(rule);for(const h of hist)s=applyMove(s,{from:h.from,to:h.to});return s;}
+$('#btnUndo').addEventListener('click',()=>{
+  if(busy||!state.history.length)return;
+  let hist=state.history.slice();
+  if(mode==='hot'){
+    // hot-seat: undo one full move (a move + any capture-chain continuations by the same player)
+    let last=hist.pop();
+    while(hist.length&&last.captured.length&&hist[hist.length-1].player===last.player&&hist[hist.length-1].captured.length)last=hist.pop();
+    state=rebuild(hist);selected=null;render();return;
+  }
+  // vs CPU: roll back until it's the human's turn again.
+  // Pop entries one at a time and rebuild until the resulting position is the
+  // human's move (or history is empty). Robust no matter how human/computer
+  // plies interleave (captures, chains, passes).
+  do{ hist.pop(); }
+  while(hist.length && rebuild(hist).turn!==humanSide);
+  state=rebuild(hist);selected=null;busy=false;render();
+  // Safety net: never leave the "thinking" indicator stuck. If we somehow land
+  // on the computer's turn, actually schedule it instead of hanging.
+  if(aiTurn())scheduleAI();
+});
+
+start();
+
+// ===================== SELF-TEST =====================
+(function(){let pass=0,fail=0;const log=[];
+  const board=m=>{const b=new Int8Array(POINTS).fill(EMPTY);for(const k in m)b[+k]=m[k];return b;};
+  const sw=(m,turn=A,r='free')=>{const s=newGame(r);s.board=board(m);s.turn=turn;s.scores=countBeads(s.board);s.chainFrom=null;s.result=null;return s;};
+  const ok=(c,m)=>{c?pass++:(fail++,log.push(`✗ ${m}`));};
+  ok(NEIGHBORS[id(2,2)].length===8,'center 8-connected');
+  ok(NEIGHBORS[id(0,1)].length===3,'odd point no diagonals');
+  ok(countBeads(initialBoard())[A]===12&&initialBoard()[id(2,2)]===EMPTY,'setup');
+  ok(legalMoves(newGame()).every(m=>m.type==='move'),'opening no captures');
+  {let s=sw({[id(0,0)]:A,[id(1,1)]:B,[id(3,3)]:B},A);let c=applyMove(s,{from:id(0,0),to:id(2,2)});
+   ok(c.chainFrom===id(2,2),'chain continues');let c2=applyMove(c,{from:id(2,2),to:id(4,4)});ok(countBeads(c2.board)[B]===0,'chain both');}
+  {let s=sw({[id(2,1)]:A,[id(2,2)]:B},A);ok(chooseMove(s,'hard').to===id(2,3),'AI takes winning capture');}
+  {let s=newGame('free');let okAll=true;for(let i=0;i<60&&!s.result;i++){const mv=chooseMove(s,i%2?'medium':'hard');
+    if(!legalMoves(s).some(x=>x.from===mv.from&&x.to===mv.to)){okAll=false;break;}s=applyMove(s,mv);}ok(okAll,'AI moves always legal');}
+  $('#testout').innerHTML=(fail===0?`<span class="ok">✓ all ${pass} engine + AI tests passed</span>`:`<span class="bad">${fail} failed</span> · ${pass} passed`)+(log.length?'\n'+log.join('\n'):'');
+})();
+</script>
+</body>
+</html>
