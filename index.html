@@ -104,6 +104,40 @@
   .mini-arrow{stroke:#2f7a4a; stroke-width:3; fill:none; marker-end:url(#mh)}
   .mini-x{stroke:#c0392b; stroke-width:3; stroke-linecap:round}
   .mini-ghost{fill:none; stroke:#2f7a4a; stroke-width:2; stroke-dasharray:4 3}
+
+  /* board overlay: confetti + win banner */
+  .boardwrap{position:relative}
+  #confetti{position:absolute; inset:0; width:100%; height:100%; pointer-events:none; z-index:5}
+  .winbanner{position:absolute; left:50%; top:50%; transform:translate(-50%,-50%) scale(.7);
+    background:rgba(42,32,14,.92); color:#f3ead4; padding:18px 30px; border-radius:16px;
+    border:1px solid var(--gold); font-size:26px; font-weight:600; letter-spacing:.5px;
+    opacity:0; pointer-events:none; z-index:6; transition:opacity .35s, transform .35s;
+    box-shadow:0 16px 40px rgba(0,0,0,.5); text-align:center; white-space:nowrap}
+  .winbanner.show{opacity:1; transform:translate(-50%,-50%) scale(1)}
+  .winbanner.lose{border-color:#9a8a78; color:#d9cdbb}
+
+  #btnMute{padding:10px 14px; font-size:16px; line-height:1}
+
+  /* tighter mobile layout */
+  @media (max-width:560px){
+    body{padding:10px 10px 28px; gap:10px}
+    h1{font-size:30px}
+    .tagline{font-size:11px; letter-spacing:1.5px}
+    .howbtn{margin-top:6px}
+    .setup{gap:6px}
+    .seg button{padding:8px 10px; font-size:12px}
+    .seg .lbl{padding:8px 8px; font-size:11px}
+    .score{padding:8px 11px} .score .nm{font-size:13px} .score .ct{font-size:19px}
+    .controls{gap:8px}
+    .controls button{padding:10px 13px; font-size:13px; flex:1 1 auto}
+    .winbanner{font-size:21px; padding:14px 22px}
+    .sheet{padding:20px 18px 24px}
+    .sheet h2{font-size:21px}
+  }
+  /* respect reduced-motion preference */
+  @media (prefers-reduced-motion:reduce){
+    .bead .body,.bead .gloss,.winbanner{transition:none}
+  }
 </style>
 </head>
 <body>
@@ -141,6 +175,8 @@
     <rect class="paper" x="8" y="8" width="544" height="544" rx="14"/>
     <g id="gLines"></g><g id="gSpots"></g><g id="gLast"></g><g id="gTargets"></g><g id="gBeads"></g>
   </svg>
+  <canvas id="confetti"></canvas>
+  <div class="winbanner" id="winbanner"><span id="winbannerText"></span></div>
 </div>
 
 <div class="status" id="status">Your move.</div>
@@ -148,17 +184,13 @@
 <div class="controls">
   <button class="primary" id="btnNew">New game</button>
   <button id="btnUndo">Undo</button>
+  <button id="btnMute" aria-label="Toggle sound" title="Sound on/off">🔊</button>
   <div class="seg">
     <span class="lbl">Capture</span>
     <button data-rule="free" class="on">Optional</button>
     <button data-rule="forced">Forced</button>
   </div>
 </div>
-
-<details>
-  <summary>Engine &amp; AI self-test</summary>
-  <pre id="testout">Running…</pre>
-</details>
 
 <div class="overlay" id="howOverlay">
   <div class="sheet" role="dialog" aria-modal="true" aria-label="How to play">
@@ -318,6 +350,33 @@ let state, selected=null, busy=false;
 let mode='cpu', diff='medium', rule='free';
 const humanSide=A;
 
+// ---- sound (Web Audio, generated — no files, no copyright) ----
+const Sound=(function(){
+  let ctx=null, muted=false;
+  const ensure=()=>{ if(!ctx){ try{ctx=new (window.AudioContext||window.webkitAudioContext)();}catch{ctx=null;} } return ctx; };
+  function tone(freq,dur,type='sine',gain=0.18,when=0){
+    const ac=ensure(); if(!ac||muted) return;
+    const t=ac.currentTime+when;
+    const o=ac.createOscillator(), g=ac.createGain();
+    o.type=type; o.frequency.setValueAtTime(freq,t);
+    g.gain.setValueAtTime(0,t);
+    g.gain.linearRampToValueAtTime(gain,t+0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+    o.connect(g); g.connect(ac.destination);
+    o.start(t); o.stop(t+dur+0.02);
+  }
+  return {
+    move(){ tone(210,0.12,'triangle',0.15); },            // soft wooden tap
+    capture(){ tone(150,0.09,'square',0.16); tone(90,0.18,'sawtooth',0.12,0.04); }, // clack
+    win(){ [523,659,784,1047].forEach((f,i)=>tone(f,0.32,'triangle',0.16,i*0.12)); }, // arpeggio up
+    lose(){ [392,330,247].forEach((f,i)=>tone(f,0.4,'sine',0.15,i*0.16)); },          // descending
+    select(){ tone(330,0.05,'sine',0.08); },
+    setMuted(m){ muted=m; },
+    isMuted(){ return muted; },
+    resume(){ const ac=ensure(); if(ac&&ac.state==='suspended') ac.resume(); },
+  };
+})();
+
 function aiTurn(){return mode==='cpu'&&state.turn!==humanSide&&!state.result;}
 
 function render(){
@@ -361,14 +420,30 @@ function chrome(){
   $('#nmB').textContent=mode==='cpu'?'Computer':'Player 2';
 }
 
-function selectBead(p){selected=(selected===p?null:p);render();}
-function doMove(m){state=applyMove(state,m);selected=state.chainFrom!=null?state.chainFrom:null;render();if(aiTurn())scheduleAI();}
+function selectBead(p){selected=(selected===p?null:p);if(selected!=null)Sound.select();render();}
+let _ended=false;
+function afterMove(wasCapture){
+  if(wasCapture)Sound.capture(); else Sound.move();
+  if(state.result&&!_ended){
+    _ended=true;
+    const youWon = mode==='cpu' ? state.result.winner===humanSide : true; // hot-seat: someone won
+    if(mode==='cpu'){ youWon?Sound.win():Sound.lose(); } else { Sound.win(); }
+    if((mode==='cpu'&&youWon)||mode!=='cpu') celebrate();
+  }
+}
+function doMove(m){
+  const wasCap=(movesFromPoint(state,m.from).find(x=>x.to===m.to)||{}).type==='capture';
+  state=applyMove(state,m);selected=state.chainFrom!=null?state.chainFrom:null;
+  afterMove(wasCap);render();if(aiTurn())scheduleAI();
+}
 function scheduleAI(){busy=true;chrome();
-  setTimeout(()=>{let guard=0;
-    do{const mv=chooseMove(state,diff);if(!mv)break;state=applyMove(state,mv);guard++;}
+  setTimeout(()=>{let guard=0,anyCap=false;
+    do{const mv=chooseMove(state,diff);if(!mv)break;
+      const wasCap=(movesFromPoint(state,mv.from).find(x=>x.to===mv.to)||{}).type==='capture';
+      state=applyMove(state,mv);anyCap=anyCap||wasCap;guard++;}
     while(state.chainFrom!=null&&guard<12);
-    busy=false;selected=null;render();},280);}
-function start(){state=newGame(rule);selected=null;busy=false;render();if(aiTurn())scheduleAI();}
+    afterMove(anyCap);busy=false;selected=null;render();},280);}
+function start(){state=newGame(rule);selected=null;busy=false;_ended=false;clearConfetti();render();if(aiTurn())scheduleAI();}
 
 $('#modeSeg').addEventListener('click',e=>{const b=e.target.closest('button[data-mode]');if(!b)return;
   mode=b.dataset.mode;[...$('#modeSeg').querySelectorAll('button')].forEach(x=>x.classList.toggle('on',x===b));
@@ -394,30 +469,61 @@ $('#btnUndo').addEventListener('click',()=>{
   // plies interleave (captures, chains, passes).
   do{ hist.pop(); }
   while(hist.length && rebuild(hist).turn!==humanSide);
-  state=rebuild(hist);selected=null;busy=false;render();
+  state=rebuild(hist);selected=null;busy=false;_ended=false;clearConfetti();render();
   // Safety net: never leave the "thinking" indicator stuck. If we somehow land
   // on the computer's turn, actually schedule it instead of hanging.
   if(aiTurn())scheduleAI();
 });
 
-start();
+// ---- confetti + win banner ----
+const cv=$('#confetti'); let cctx=null, parts=[], raf=null;
+function sizeCanvas(){ if(!cv)return; const r=cv.getBoundingClientRect();
+  cv.width=r.width*devicePixelRatio; cv.height=r.height*devicePixelRatio;
+  cctx=cv.getContext('2d'); cctx.setTransform(devicePixelRatio,0,0,devicePixelRatio,1,1); }
+window.addEventListener('resize',sizeCanvas);
+const reduceMotion=window.matchMedia&&window.matchMedia('(prefers-reduced-motion:reduce)').matches;
+function celebrate(){
+  const txt = mode==='cpu' ? (state.result.winner===humanSide?'You win!':'') :
+              `Player ${state.result.winner===A?1:2} wins!`;
+  const lost = mode==='cpu' && state.result.winner!==humanSide;
+  const banner=$('#winbanner');
+  banner.className='winbanner show'+(lost?' lose':'');
+  $('#winbannerText').textContent = lost ? 'You lost' : (txt||'Game over');
+  if(lost || reduceMotion) return; // no confetti on a loss or if motion reduced
+  sizeCanvas();
+  const colors=['#c8973f','#a8472a','#2f3a56','#e8b04b','#7fae8a','#f3ead4'];
+  const r=cv.getBoundingClientRect();
+  parts=[]; for(let i=0;i<120;i++)parts.push({
+    x:Math.random()*r.width, y:-20-Math.random()*r.height*0.5,
+    vx:(Math.random()-0.5)*2.4, vy:2+Math.random()*3,
+    s:4+Math.random()*5, rot:Math.random()*6.28, vr:(Math.random()-0.5)*0.3,
+    col:colors[i%colors.length], life:0 });
+  cancelAnimationFrame(raf); tick();
+}
+function tick(){
+  if(!cctx)return; const r=cv.getBoundingClientRect();
+  cctx.clearRect(0,0,r.width,r.height);
+  let alive=false;
+  for(const p of parts){
+    p.life++; p.x+=p.vx; p.y+=p.vy; p.vy+=0.04; p.rot+=p.vr;
+    if(p.y<r.height+20)alive=true;
+    cctx.save(); cctx.translate(p.x,p.y); cctx.rotate(p.rot);
+    cctx.fillStyle=p.col; cctx.fillRect(-p.s/2,-p.s/2,p.s,p.s*0.6); cctx.restore();
+  }
+  if(alive)raf=requestAnimationFrame(tick); else cctx.clearRect(0,0,r.width,r.height);
+}
+function clearConfetti(){ const b=$('#winbanner'); if(b)b.className='winbanner';
+  parts=[]; if(cctx){const r=cv.getBoundingClientRect();cctx.clearRect(0,0,r.width,r.height);} cancelAnimationFrame(raf); }
 
-// ===================== SELF-TEST =====================
-(function(){let pass=0,fail=0;const log=[];
-  const board=m=>{const b=new Int8Array(POINTS).fill(EMPTY);for(const k in m)b[+k]=m[k];return b;};
-  const sw=(m,turn=A,r='free')=>{const s=newGame(r);s.board=board(m);s.turn=turn;s.scores=countBeads(s.board);s.chainFrom=null;s.result=null;return s;};
-  const ok=(c,m)=>{c?pass++:(fail++,log.push(`✗ ${m}`));};
-  ok(NEIGHBORS[id(2,2)].length===8,'center 8-connected');
-  ok(NEIGHBORS[id(0,1)].length===3,'odd point no diagonals');
-  ok(countBeads(initialBoard())[A]===12&&initialBoard()[id(2,2)]===EMPTY,'setup');
-  ok(legalMoves(newGame()).every(m=>m.type==='move'),'opening no captures');
-  {let s=sw({[id(0,0)]:A,[id(1,1)]:B,[id(3,3)]:B},A);let c=applyMove(s,{from:id(0,0),to:id(2,2)});
-   ok(c.chainFrom===id(2,2),'chain continues');let c2=applyMove(c,{from:id(2,2),to:id(4,4)});ok(countBeads(c2.board)[B]===0,'chain both');}
-  {let s=sw({[id(2,1)]:A,[id(2,2)]:B},A);ok(chooseMove(s,'hard').to===id(2,3),'AI takes winning capture');}
-  {let s=newGame('free');let okAll=true;for(let i=0;i<60&&!s.result;i++){const mv=chooseMove(s,i%2?'medium':'hard');
-    if(!legalMoves(s).some(x=>x.from===mv.from&&x.to===mv.to)){okAll=false;break;}s=applyMove(s,mv);}ok(okAll,'AI moves always legal');}
-  $('#testout').innerHTML=(fail===0?`<span class="ok">✓ all ${pass} engine + AI tests passed</span>`:`<span class="bad">${fail} failed</span> · ${pass} passed`)+(log.length?'\n'+log.join('\n'):'');
-})();
+// ---- mute toggle ----
+$('#btnMute').addEventListener('click',()=>{
+  const m=!Sound.isMuted(); Sound.setMuted(m);
+  $('#btnMute').textContent = m ? '🔇' : '🔊';
+});
+// browsers require a user gesture to start audio; resume on first interaction
+document.addEventListener('pointerdown',()=>Sound.resume(),{once:true});
+
+start();
 
 // ===================== HOW TO PLAY =====================
 (function(){
