@@ -4,6 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <title>Bead 12 · 12 Guti</title>
+<!-- CrazyGames SDK (loads only on their platform; harmless elsewhere). -->
+<script src="https://sdk.crazygames.com/crazygames-sdk-v3.js"></script>
 <style>
   :root{
     --paper:#e9ddc4; --paper-edge:#d8c7a3;
@@ -377,6 +379,63 @@ const Sound=(function(){
   };
 })();
 
+// ---- CrazyGames SDK wrapper (fully optional; no-ops off-platform) ----
+const CG=(function(){
+  let sdk=null, ready=false;
+  let lastMidgame=0;                 // ms timestamp of last midgame ad
+  const MIDGAME_COOLDOWN=180000;     // 3 min, per CrazyGames guidance
+  let adInProgress=false;
+
+  async function init(){
+    try{
+      if(window.CrazyGames && window.CrazyGames.SDK){
+        sdk=window.CrazyGames.SDK;
+        await sdk.init();            // required in v3; resolves instantly if disabled
+        ready=true;
+      }
+    }catch(e){ ready=false; }        // off-platform / blocked -> stay disabled
+  }
+
+  const available=()=> ready && sdk && sdk.ad;
+
+  // Pause/mute the game around any ad, then restore.
+  function freeze(){ adInProgress=true; Sound._wasMuted=Sound.isMuted(); Sound.setMuted(true); document.body.style.pointerEvents='none'; }
+  function thaw(){ adInProgress=false; Sound.setMuted(Sound._wasMuted||false); document.body.style.pointerEvents=''; }
+
+  // Midgame ad at a natural break. Respects cooldown. Always finishes by
+  // calling done() whether or not an ad actually showed.
+  function midgame(done){
+    const now=Date.now();
+    if(!available() || now-lastMidgame < MIDGAME_COOLDOWN){ done&&done(); return; }
+    lastMidgame=now;
+    freeze();
+    sdk.ad.requestAd('midgame',{
+      adStarted:()=>{},
+      adFinished:()=>{ thaw(); done&&done(); },
+      adError:()=>{ thaw(); done&&done(); },   // unfilled/adblock -> continue normally
+    });
+  }
+
+  // Rewarded ad. reward() runs ONLY on adFinished; fail() on error/unfilled.
+  // If the SDK is unavailable, we simply grant the reward (so your own-domain
+  // build stays fully functional — required by CrazyGames policy anyway).
+  function rewarded(reward, fail){
+    if(!available()){ reward&&reward(); return; }
+    freeze();
+    sdk.ad.requestAd('rewarded',{
+      adStarted:()=>{},
+      adFinished:()=>{ thaw(); reward&&reward(); },
+      adError:()=>{ thaw(); fail&&fail(); },
+    });
+  }
+
+  function gameplayStart(){ try{ if(available()&&sdk.game) sdk.game.gameplayStart(); }catch{} }
+  function gameplayStop(){ try{ if(available()&&sdk.game) sdk.game.gameplayStop(); }catch{} }
+  const isBusy=()=>adInProgress;
+
+  return { init, midgame, rewarded, gameplayStart, gameplayStop, isBusy, available };
+})();
+
 function aiTurn(){return mode==='cpu'&&state.turn!==humanSide&&!state.result;}
 
 function render(){
@@ -426,9 +485,13 @@ function afterMove(wasCapture){
   if(wasCapture)Sound.capture(); else Sound.move();
   if(state.result&&!_ended){
     _ended=true;
+    CG.gameplayStop();
     const youWon = mode==='cpu' ? state.result.winner===humanSide : true; // hot-seat: someone won
     if(mode==='cpu'){ youWon?Sound.win():Sound.lose(); } else { Sound.win(); }
     if((mode==='cpu'&&youWon)||mode!=='cpu') celebrate();
+    // Midgame ad at this natural break (respects 3-min cooldown internally,
+    // and no-ops entirely off-platform). Celebration shows underneath.
+    CG.midgame();
   }
 }
 function doMove(m){
@@ -443,7 +506,7 @@ function scheduleAI(){busy=true;chrome();
       state=applyMove(state,mv);anyCap=anyCap||wasCap;guard++;}
     while(state.chainFrom!=null&&guard<12);
     afterMove(anyCap);busy=false;selected=null;render();},280);}
-function start(){state=newGame(rule);selected=null;busy=false;_ended=false;clearConfetti();render();if(aiTurn())scheduleAI();}
+function start(){state=newGame(rule);selected=null;busy=false;_ended=false;clearConfetti();render();CG.gameplayStart();if(aiTurn())scheduleAI();}
 
 $('#modeSeg').addEventListener('click',e=>{const b=e.target.closest('button[data-mode]');if(!b)return;
   mode=b.dataset.mode;[...$('#modeSeg').querySelectorAll('button')].forEach(x=>x.classList.toggle('on',x===b));
@@ -454,25 +517,28 @@ document.querySelectorAll('[data-rule]').forEach(btn=>btn.addEventListener('clic
   rule=btn.dataset.rule;document.querySelectorAll('[data-rule]').forEach(x=>x.classList.toggle('on',x===btn));start();}));
 $('#btnNew').addEventListener('click',start);
 function rebuild(hist){let s=newGame(rule);for(const h of hist)s=applyMove(s,{from:h.from,to:h.to});return s;}
-$('#btnUndo').addEventListener('click',()=>{
-  if(busy||!state.history.length)return;
+function performUndo(){
   let hist=state.history.slice();
   if(mode==='hot'){
-    // hot-seat: undo one full move (a move + any capture-chain continuations by the same player)
     let last=hist.pop();
     while(hist.length&&last.captured.length&&hist[hist.length-1].player===last.player&&hist[hist.length-1].captured.length)last=hist.pop();
     state=rebuild(hist);selected=null;render();return;
   }
-  // vs CPU: roll back until it's the human's turn again.
-  // Pop entries one at a time and rebuild until the resulting position is the
-  // human's move (or history is empty). Robust no matter how human/computer
-  // plies interleave (captures, chains, passes).
+  // vs CPU: roll back until it's the human's turn again. Robust no matter how
+  // human/computer plies interleave (captures, chains, passes).
   do{ hist.pop(); }
   while(hist.length && rebuild(hist).turn!==humanSide);
   state=rebuild(hist);selected=null;busy=false;_ended=false;clearConfetti();render();
-  // Safety net: never leave the "thinking" indicator stuck. If we somehow land
-  // on the computer's turn, actually schedule it instead of hanging.
-  if(aiTurn())scheduleAI();
+  if(aiTurn())scheduleAI(); // safety net: never leave "thinking" stuck
+}
+$('#btnUndo').addEventListener('click',()=>{
+  if(busy||!state.history.length||CG.isBusy())return;
+  // On CrazyGames, Undo is a rewarded action: watch a short ad, then take back
+  // the move. Off-platform the reward is granted immediately (game stays free).
+  CG.rewarded(
+    ()=>performUndo(),          // adFinished -> grant the undo
+    ()=>{ /* adError/unfilled -> do NOT undo; game continues unchanged */ }
+  );
 });
 
 // ---- confetti + win banner ----
@@ -523,7 +589,14 @@ $('#btnMute').addEventListener('click',()=>{
 // browsers require a user gesture to start audio; resume on first interaction
 document.addEventListener('pointerdown',()=>Sound.resume(),{once:true});
 
-start();
+// Initialize the CrazyGames SDK (no-op off-platform), then start the game.
+// When ads are live, label Undo so players know it plays a short ad.
+CG.init().then(()=>{
+  if(CG.available()){
+    const u=$('#btnUndo'); if(u) u.textContent='Undo ▶'; // ▶ hints "watch to undo"
+  }
+  start();
+});
 
 // ===================== HOW TO PLAY =====================
 (function(){
